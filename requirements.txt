@@ -1,0 +1,22 @@
+# Dependencias do projeto Beyond the Cover Analytics
+# Selecionadas para execucao eficiente em maquina local (CPU e GPU integrada)
+
+# Manipulacao e Armazenamento de Dados de Alta Performance
+duckdb>=1.1.0        # Banco colunar em memoria para consultas analiticas ultrarrapidas
+pandas>=2.2.0        # Manipulacao de DataFrames e operacoes tabulares
+pyarrow>=17.0.0      # Formato colunar Apache Parquet de alta compressao e velocidade
+
+# Processamento de Linguagem Natural (NLP) e Machine Learning
+vaderSentiment>=3.3.2 # Analise de sentimento especializada em resenhas (rapida e leve)
+scikit-learn>=1.5.0   # TF-IDF (Frequencia do Termo - Inverso da Frequencia), N-grams
+nltk>=3.9.0           # Stopwords e processamento basico de linguagem natural
+
+# Visualizacao e Aplicacao Web Interativa
+streamlit>=1.38.0     # Framework web para construcao da aplicacao de negocio
+plotly>=5.24.0        # Graficos interativos de alta definicao
+matplotlib>=3.9.0     # Visualizacoes estatisticas estaticas
+seaborn>=0.13.0       # Estilo e graficos estatisticos complementares
+
+# Utilitarios
+tqdm>=4.66.0          # Barras de progresso para loops e processamentos
+gdown>=5.2.0          # Download automatizado de arquivos do Google Drive

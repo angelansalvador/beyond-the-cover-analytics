@@ -1,0 +1,16 @@
+# Ambientes virtuais
+.venv/
+venv/
+ENV/
+
+# Arquivos de dados pesados (maiores que 100MB - nao devem ir ao GitHub)
+data/
+*.csv
+*.duckdb
+*.parquet
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.class
+.ipynb_checkpoints/
