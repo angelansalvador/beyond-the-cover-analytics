@@ -318,11 +318,11 @@ class DataLoader:
     # ANALISE DE GENEROS
     # =========================================================================
     def get_series_temporais_generos(self) -> pd.DataFrame:
-        """Retorna a serie historica pre-calculada de generos por ano."""
+        """Retorna a serie historica pre-calculada de generos por ano ordenada cronologicamente."""
         query = """
             SELECT genero, ano, total_reviews, score_medio
             FROM genre_yearly_stats
-            ORDER BY total_reviews DESC, ano ASC;
+            ORDER BY genero ASC, ano ASC;
         """
         return self.conn.execute(query).df()
 

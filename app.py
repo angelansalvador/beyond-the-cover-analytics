@@ -698,12 +698,16 @@ elif opcao_menu == "📊 Análise de Gêneros":
         )
 
         if generos_selecionados:
-            df_ts_filtrado = df_time_series[df_time_series["genero"].isin(generos_selecionados)]
+            df_ts_filtrado = (
+                df_time_series[df_time_series["genero"].isin(generos_selecionados)]
+                .sort_values(by=["genero", "ano"], ascending=[True, True])
+                .reset_index(drop=True)
+            )
 
             col_gh1, col_gh2 = st.columns(2)
 
             with col_gh1:
-                # Grafico 1: Tração Anual de Leituras (Volume de Reviews por Ano)
+                # Grafico 1: Tração Anual de Leituras (Volume de Reviews por Ano) - Ordem Cronológica
                 fig_tracao = px.line(
                     df_ts_filtrado,
                     x="ano",
@@ -717,13 +721,14 @@ elif opcao_menu == "📊 Análise de Gêneros":
                 fig_tracao.update_layout(
                     height=380, 
                     margin=dict(t=40, b=20, l=20, r=20),
-                    hovermode="x unified"
+                    hovermode="x unified",
+                    xaxis=dict(dtick=2, tickformat="d")
                 )
                 fig_tracao.update_traces(hovertemplate="%{y:,} reviews")
                 st.plotly_chart(fig_tracao, use_container_width=True)
 
             with col_gh2:
-                # Grafico 2: Retenção & Satisfação do Público (Nota Média por Ano)
+                # Grafico 2: Retenção & Satisfação do Público (Nota Média por Ano) - Ordem Cronológica
                 fig_satisfacao = px.line(
                     df_ts_filtrado,
                     x="ano",
@@ -738,7 +743,8 @@ elif opcao_menu == "📊 Análise de Gêneros":
                     height=380, 
                     margin=dict(t=40, b=20, l=20, r=20),
                     yaxis_range=[3.6, 4.8],
-                    hovermode="x unified"
+                    hovermode="x unified",
+                    xaxis=dict(dtick=2, tickformat="d")
                 )
                 fig_satisfacao.update_traces(hovertemplate="%{y:.2f}★")
                 st.plotly_chart(fig_satisfacao, use_container_width=True)
