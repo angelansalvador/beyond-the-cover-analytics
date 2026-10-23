@@ -32,11 +32,6 @@ Para garantir que nenhuma análise fosse distorcida por dados sujos ou redundant
 
 * **Acervo Único & Canonizado**: **207.101 títulos únicos** catalogados (exatamente 1 linha por livro com seu respectivo autor e gênero consolidado, eliminando variantes e pontuações).
 * **Avaliações Consolidadas**: **2.004.512 resenhas limpas e estritamente deduplicadas** em memória através de particionamento colunar `(User_id, norm_title_key, timestamp)`. Linhas sem texto ou sem título preenchido foram descartadas conforme especificação.
-* **Consolidação de Casos Emblemáticos (*The Hobbit* & J. R. R. Tolkien)**:
-  - Títulos variantes (*“The Hobbit There and Back Again”*, *“The Hobbit or There and Back Again”*, *“The Hobbitt, or there and back again; illustrated by the author”* e *“The Hobbit; Or, There and Back Again”*) foram todos unificados para **`The Hobbit`**.
-  - O autor foi padronizado para **`J. R. R. Tolkien`** e a categoria para **`Ficção Juvenil`**.
-  - Todas as **3.648 avaliações legítimas e únicas** de *The Hobbit* foram preservadas e vinculadas a Tolkien, totalizando **8.543 resenhas consolidadas** do autor na base com média de **⭐ 4.60** e **90.3% de aprovação (4-5★)**.
-
 ---
 
 ## 🏛️ 3. Módulos da Plataforma Web Interativa
