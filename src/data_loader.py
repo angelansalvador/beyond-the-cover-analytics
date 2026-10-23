@@ -1,13 +1,15 @@
 """
-Modulo: data_loader.py (Versao 4.0 Definitiva)
-Descricao: Camada analitica com DuckDB para:
-1. Panorama Geral com EDA robusta (Evolucao temporal, distribuicao de estrelas, generos)
-2. Performance por Autor com comparativo geral (melhores e piores avaliados) e serie temporal individual
-3. Analise de Generos com series temporais (Ano x Reviews e Ano x Nota Media)
-4. Scoreboard dos 4 Pilares de Entrevista e busca das 3 reviews representativas
+Modulo: data_loader.py (Versao 5.0 Definitiva)
+Descricao: Camada analitica colunar de alta performance utilizando DuckDB para:
+1. Panorama Geral do Mercado com filtro de periodo (anos) para distribuicao de notas e top generos.
+2. Performance por Autor com filtros de faixa de volume, tooltips com contagem de reviews e dropdown completo (40+ reviews).
+3. Analise de Generos com series temporais instrutivas (tracao anual e nota media) e matriz completa de indices com explicacoes.
+4. Scoreboard dos 4 Pilares de Entrevista e busca de reviews representativas.
 """
 
 import os
+import time
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 import duckdb
 import pandas as pd
@@ -16,13 +18,14 @@ import numpy as np
 
 class DataLoader:
     """
-    Orquestrador analitico colunar DuckDB de alta performance.
+    Orquestrador analitico colunar DuckDB de alta performance (Modo Read-Only).
     """
 
     def __init__(self, data_dir: str = "/home/angisalva/desafio_a3data/beyond-the-cover-analytics/data"):
         self.data_dir = data_dir
         self.db_path = os.path.join(data_dir, "analytics.duckdb")
-        self.conn = duckdb.connect(self.db_path)
+        # Abre em modo read_only para evitar conflitos de lock de arquivo
+        self.conn = duckdb.connect(self.db_path, read_only=True)
         self.conn.execute("SET memory_limit = '3GB';")
         self.conn.execute("SET threads = 4;")
 
@@ -63,25 +66,46 @@ class DataLoader:
         """
         return self.conn.execute(query).df()
 
-    def get_distribuicao_estrelas(self) -> pd.DataFrame:
-        """Distribuicao percentual e absoluta de estrelas (1 a 5)."""
-        query = """
-            WITH total AS (
-                SELECT count(*) AS total_geral FROM ratings WHERE score IS NOT NULL
+    def get_distribuicao_estrelas(self, ano_min: Optional[int] = None, ano_max: Optional[int] = None) -> pd.DataFrame:
+        """
+        Distribuicao percentual e absoluta de estrelas (1 a 5), com filtro opcional de intervalo de anos.
+        """
+        where_clauses = ["score IS NOT NULL", "score BETWEEN 1 AND 5"]
+        if ano_min is not None and ano_max is not None:
+            t_min = int(time.mktime(datetime(ano_min, 1, 1).timetuple()))
+            t_max = int(time.mktime(datetime(ano_max + 1, 1, 1).timetuple()))
+            where_clauses.append(f"time >= {t_min}")
+            where_clauses.append(f"time < {t_max}")
+
+        where_sql = " AND ".join(where_clauses)
+
+        query = f"""
+            WITH filtered AS (
+                SELECT score FROM ratings WHERE {where_sql}
+            ),
+            total AS (
+                SELECT count(*) AS total_geral FROM filtered
             )
             SELECT 
                 CAST(score AS INTEGER) AS "Estrelas",
                 count(*) AS "Total Avaliações",
-                round(count(*) * 100.0 / (SELECT total_geral FROM total), 1) AS "Percentual"
-            FROM ratings
-            WHERE score IS NOT NULL AND score BETWEEN 1 AND 5
+                round(count(*) * 100.0 / NULLIF((SELECT total_geral FROM total), 0), 1) AS "Percentual"
+            FROM filtered
             GROUP BY 1
             ORDER BY 1 ASC;
         """
         return self.conn.execute(query).df()
 
-    def get_top_generos_geral(self, limit: int = 10) -> pd.DataFrame:
-        """Top generos em volume de avaliacoes e acervo."""
+    def get_top_generos_geral(self, limit: int = 10, ano_min: Optional[int] = None, ano_max: Optional[int] = None) -> pd.DataFrame:
+        """
+        Top generos em volume de avaliacoes, com filtro opcional de intervalo de anos.
+        """
+        time_filter = ""
+        if ano_min is not None and ano_max is not None:
+            t_min = int(time.mktime(datetime(ano_min, 1, 1).timetuple()))
+            t_max = int(time.mktime(datetime(ano_max + 1, 1, 1).timetuple()))
+            time_filter = f"AND r.time >= {t_min} AND r.time < {t_max}"
+
         query = f"""
             SELECT 
                 b.categories AS "Gênero",
@@ -90,7 +114,9 @@ class DataLoader:
                 round(avg(r.score), 2) AS "Nota Média"
             FROM ratings r
             JOIN books b ON r.norm_title_key = b.norm_title_key
-            WHERE b.categories IS NOT NULL AND b.categories != 'Geral / Outros'
+            WHERE b.categories IS NOT NULL 
+              AND b.categories != 'Geral / Outros'
+              {time_filter}
             GROUP BY b.categories
             ORDER BY "Total Avaliações" DESC
             LIMIT {limit};
@@ -172,27 +198,64 @@ class DataLoader:
     # =========================================================================
     # EDA: PERFORMANCE POR AUTOR
     # =========================================================================
-    def get_ranking_geral_autores(self, min_avaliacoes: int = 40, limit: int = 10) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def get_ranking_geral_autores(
+        self, 
+        faixa_volume: str = "Todas as faixas (Mínimo 40 avaliações)", 
+        limit: int = 10
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Retorna os autores mais bem avaliados e os menos bem avaliados (com filtro de volume minimo).
-        Consulta instantanea sobre a tabela author_stats.
+        Retorna os autores mais bem avaliados e os com menor media conforme faixa de quantidade de reviews:
+        - '0 a 1000' (ou '0 a 1.000')
+        - '1001 a 5000' (ou '1.001 a 5.000')
+        - '5001 a 10000' (ou '5.001 a 10.000')
+        - 'mais de 10000' (ou 'Mais de 10.000')
         """
+        # Mapeamento robusto da condicao de filtro de volume
+        faixa_norm = faixa_volume.lower().replace(".", "").replace(" ", "")
+        
+        if "0a1000" in faixa_norm:
+            where_vol = "total_avaliacoes BETWEEN 20 AND 1000"
+        elif "1001a5000" in faixa_norm:
+            where_vol = "total_avaliacoes BETWEEN 1001 AND 5000"
+        elif "5001a10000" in faixa_norm:
+            where_vol = "total_avaliacoes BETWEEN 5001 AND 10000"
+        elif "maisde10000" in faixa_norm or ">10000" in faixa_norm:
+            where_vol = "total_avaliacoes > 10000"
+        else:
+            where_vol = "total_avaliacoes >= 40"
+
         base_query = f"""
             SELECT 
                 autor AS "Autor",
                 total_avaliacoes AS "Total Avaliações",
                 nota_media AS "Nota Média",
-                pct_5 AS "Pct 5★",
+                pct_elogios AS "Pct Elogios (4-5★)",
                 pct_criticas AS "Pct Críticas (1-2★)"
             FROM author_stats
-            WHERE total_avaliacoes >= {min_avaliacoes}
+            WHERE {where_vol}
         """
         df_melhores = self.conn.execute(f"{base_query} ORDER BY nota_media DESC, total_avaliacoes DESC LIMIT {limit};").df()
         df_piores = self.conn.execute(f"{base_query} ORDER BY nota_media ASC, total_avaliacoes DESC LIMIT {limit};").df()
         return df_melhores, df_piores
 
+    def get_autores_para_selecao(self, min_avaliacoes: int = 40) -> List[Dict[str, Any]]:
+        """
+        Retorna TODOS os autores com mais de min_avaliacoes (padrao 40) para preencher a lista de selecao.
+        Ordenados por volume decrescente de avaliacoes.
+        """
+        query = f"""
+            SELECT 
+                autor,
+                total_avaliacoes,
+                nota_media
+            FROM author_stats
+            WHERE total_avaliacoes >= {min_avaliacoes}
+            ORDER BY total_avaliacoes DESC;
+        """
+        return self.conn.execute(query).df().to_dict(orient="records")
+
     def get_top_autores(self, limit: int = 60) -> List[Dict[str, Any]]:
-        """Autores com maior volume de avaliacoes para selecao no dropdown."""
+        """Mantido para compatibilidade retroativa."""
         query = f"""
             SELECT 
                 autor,
@@ -205,7 +268,7 @@ class DataLoader:
         return self.conn.execute(query).df().to_dict(orient="records")
 
     def get_todas_reviews_autor(self, autor_nome: str) -> pd.DataFrame:
-        """Busca todas as resenhas do autor selecionado sem cortes artificiais."""
+        """Busca todas as resenhas do autor selecionado."""
         query = f"""
             WITH autor_books AS (
                 SELECT norm_title_key, authors, categories as genero
@@ -264,13 +327,15 @@ class DataLoader:
         return self.conn.execute(query).df()
 
     def get_metricas_generos(self, limit: int = 35) -> pd.DataFrame:
-        """Indicadores de mercado dos generos baseados estritamente em notas e volumes."""
+        """
+        Indicadores de mercado dos generos com calculo dos indices proprietarios.
+        """
         query = f"""
             SELECT 
                 genero AS "Gênero",
-                total_avaliacoes,
-                nota_media,
-                desvio_padrao,
+                total_avaliacoes AS "Total Avaliações",
+                nota_media AS "Nota Média",
+                desvio_padrao AS "Desvio Padrão",
                 pct_5_estrelas,
                 pct_baixas
             FROM genre_stats
@@ -279,27 +344,26 @@ class DataLoader:
         """
         df = self.conn.execute(query).df()
 
-        mediana_vol = df["total_avaliacoes"].median()
+        mediana_vol = df["Total Avaliações"].median()
         df["Índice Paixão de Nicho"] = (
-            (df["nota_media"] - 3.5).clip(lower=0) * 40.0 +
+            (df["Nota Média"] - 3.5).clip(lower=0) * 40.0 +
             (df["pct_5_estrelas"] * 40.0) +
-            (np.where(df["total_avaliacoes"] < mediana_vol, 20.0, 5.0))
+            (np.where(df["Total Avaliações"] < mediana_vol, 20.0, 5.0))
         ).round(1)
 
         df["Índice Polêmica / Hype"] = (
-            (df["desvio_padrao"].fillna(1.0) / 1.5).clip(0, 1) * 50.0 +
-            (np.log10(df["total_avaliacoes"]) / 5.0).clip(0, 1) * 30.0 +
+            (df["Desvio Padrão"].fillna(1.0) / 1.5).clip(0, 1) * 50.0 +
+            (np.log10(df["Total Avaliações"]) / 5.0).clip(0, 1) * 30.0 +
             (df["pct_baixas"] * 20.0)
         ).round(1)
 
         df["Consistência de Agradecimento"] = (
-            (df["nota_media"] / 5.0) * 60.0 +
-            (1.0 - (df["desvio_padrao"].fillna(1.0) / 2.0)).clip(0, 1) * 40.0
+            (df["Nota Média"] / 5.0) * 60.0 +
+            (1.0 - (df["Desvio Padrão"].fillna(1.0) / 2.0)).clip(0, 1) * 40.0
         ).round(1)
 
         return df
 
-    # Alias para compatibilidade
     def get_metricas_generos_irreverente(self, limit: int = 35) -> pd.DataFrame:
         return self.get_metricas_generos(limit=limit)
 
@@ -349,7 +413,7 @@ class DataLoader:
 
 if __name__ == "__main__":
     loader = DataLoader()
-    print("DataLoader v4.0 pronto.")
+    print("DataLoader v5.0 inicializado com sucesso!")
     melhores, piores = loader.get_ranking_geral_autores()
     print("Top 3 melhores autores:")
     print(melhores.head(3))

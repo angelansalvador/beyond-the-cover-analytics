@@ -420,41 +420,126 @@ class LLMEngine:
         self,
         nome_autor: str,
         metricas: Dict[str, Any],
-        top_elogios: List[str],
-        top_criticas: List[str]
+        df_reviews: Optional[pd.DataFrame] = None,
+        top_elogios: Optional[List[str]] = None,
+        top_criticas: Optional[List[str]] = None
     ) -> str:
         """
-        Gera relatorio executivo sem quotes soltas, altamente detalhado, com forcas,
-        pontos de melhoria e recomendacoes especificas para a Editora.
+        Gera relatorio executivo editorial irreverente, criativo e estrategico,
+        analisando as resenhas reais sem formulas engessadas ou citacao mecanica de keywords.
         """
         total = metricas.get("total_avaliacoes", 0)
         score_medio = metricas.get("nota_media", 0.0)
-        pct_elogios = metricas.get("pct_elogios", 0.0)
-        pct_criticas = metricas.get("pct_criticas", 0.0)
+        pct_pos = metricas.get("pct_positivas", metricas.get("pct_elogios", 0.0))
+        pct_neg = metricas.get("pct_negativas", metricas.get("pct_criticas", 0.0))
 
-        elogios_str = ", ".join(top_elogios[:4]) if top_elogios else "construção de mundo, coerência e ritmo"
-        criticas_str = ", ".join(top_criticas[:4]) if top_criticas else "densidade de passagens intermediárias"
+        # Coleta amostras de resenhas reais se df_reviews for fornecido
+        amostras_pos = []
+        amostras_neg = []
+        if df_reviews is not None and not df_reviews.empty:
+            r_pos = df_reviews[df_reviews["score"] >= 4.0]
+            if not r_pos.empty:
+                amostras_pos = r_pos["text"].dropna().astype(str).str.strip().head(4).tolist()
+            r_neg = df_reviews[df_reviews["score"] <= 2.0]
+            if not r_neg.empty:
+                amostras_neg = r_neg["text"].dropna().astype(str).str.strip().head(4).tolist()
 
-        sintese = (
-            f"### 📋 Diagnóstico Executivo Editorial: {nome_autor}\n\n"
-            f"**1. Panorama Geral do Desempenho:**\n"
-            f"A análise contempla a totalidade de **{total:,} avaliações registradas** para as obras de {nome_autor}, "
-            f"apresentando um score médio consolidado de **⭐ {score_medio:.2f} / 5.0**. "
-            f"Entre todas as resenhas do autor, **{pct_elogios:.1f}% expressam termos de elogio explícito** segundo a Taxonomia Sentinela, "
-            f"enquanto **{pct_criticas:.1f}% apontam pontos de atrito ou crítica direta**.\n\n"
-            f"**2. Diagnóstico de Forças Competitivas:**\n"
-            f"- **Fidelização do Leitor:** Os leitores evidenciam forte retenção e apreciação destacada nos aspectos de *{elogios_str}*.\n"
-            f"- **Potencial de Catálogo Perene (Backlist):** A consistência temporal das notas indica que as obras do autor mantêm relevância e procura contínua ao longo dos anos, não dependendo apenas de modismos passageiros.\n"
-            f"- **Recomendação Espontânea:** Alta incidência de classificações máximas geradas por valor percebido na prosa e no arco dramático.\n\n"
-            f"**3. Pontos de Atenção & Oportunidades de Melhoria:**\n"
-            f"- **Ajuste de Cadência Narrativa:** As menções críticas recorrentes indicam sensibilidade a *{criticas_str}*, sugerindo que futuros manuscritos se beneficiarão de uma intervenção de edição mais rigorosa no segundo terço da obra.\n"
-            f"- **Expectativa vs Entrega no Clímax:** Leitores mais experientes expressam descontentamento quando a resolução de conflitos centrais se dá de maneira rápida demais em comparação com o tempo investido na preparação do conflito.\n\n"
-            f"**4. Recomendações Estratégicas para o Comitê Editorial:**\n"
-            f"- **Política de Lançamentos:** Priorizar edições de luxo (capa dura, materiais especiais) para títulos com taxa de elogio acima de 70%, capturando maior margem unitária.\n"
-            f"- **Alinhamento de Sinopses:** Evitar campanhas de divulgação que prometam ritmos 'eletrizantes' em obras de ritmo contemplativo, prevenindo avaliações punitivas por quebra de expectativa.\n"
-            f"- **Prospecção de Novos Autores:** Buscar originais no mercado nacional que compartilhem a solidez temática do autor, aproveitando a base consumidora já mapeada."
-        )
-        return sintese
+        # 1. Se Google AI Pro (Gemini) estiver ativo, utiliza LLM com prompt irreverente e executivo
+        if self.gemini_model:
+            try:
+                amostras_pos_str = chr(10).join(["- " + txt[:220] + "..." for txt in amostras_pos]) if amostras_pos else "Leitores louvam o impacto, profundidade e a construcao de mundo da obra."
+                amostras_neg_str = chr(10).join(["- " + txt[:220] + "..." for txt in amostras_neg]) if amostras_neg else "Poucas criticas severas registradas, focadas em ritmo e densidade."
+                prompt = f"""
+Voce e o Diretor de Inteligencia Editorial da editora. Seu estilo e perspicaz, afiado, irreverente, sem meias-palavras e orientado a negocios e literatura real.
+NAO use formulas corporativas vazias (como 'no cenario contemporaneo', 'a analise do corpus revelou') e NAO cite listas mecanicas de palavras-chave.
+Voce analisou {total:,} resenhas de leitores reais para o autor {nome_autor} (nota media: ⭐ {score_medio:.2f}/5.0, {pct_pos:.1f}% positivas, {pct_neg:.1f}% criticas).
+
+Amostras de resenhas positivas reais:
+{amostras_pos_str}
+
+Amostras de resenhas criticas reais:
+{amostras_neg_str}
+
+Escreva o **Relatorio Executivo Editorial: Raio-X de {nome_autor}**, contendo exatamente estas 3 secoes irreverentes e estrategicas:
+### ⚡ 1. O Veredito Nu e Cru
+(Diga sem rodeios o que esse autor realmente e na pratica comercial e artistica. O que faz o publico devorar seus livros? E genialidade narrativa, conexao emocional ou puro conforto de genero? Onde ele e insubstituivel?)
+
+### ⚠️ 2. A Neurose do Leitor: Onde a Obra Engasga
+(Analisando quem deu 1 e 2 estrelas sem piedade, qual e a verdadeira bronca do leitor? Ritmo arrastado? Finais apressados? Prosa prolixa que testa a paciencia? Quebra de promessa entre a capa e o miolo?)
+
+### 🎯 3. Diretrizes para a Mesa Editorial (Segunda-Feira, 9h)
+(Tres ordens executivas claras e praticas para a equipe: politica de tiragem/edicoes de luxo, intervencao de edicao/traducao e alinhamento de marketing para parar de vender o livro para o leitor errado).
+"""
+                response = self.gemini_model.generate_content(prompt)
+                if response and response.text:
+                    return response.text.strip()
+            except Exception as e:
+                print(f"Fallback local na sintese executiva: {e}")
+
+        # 2. Motor Analitico Local Irreverente & Profundo (Offline / Fallback)
+        if score_medio >= 4.4:
+            veredito = (
+                f"Temos em mãos um verdadeiro **monstro sagrado de catálogo perene (backlist de ouro)**. "
+                f"Com {total:,} avaliações e média de **⭐ {score_medio:.2f}**, {nome_autor} não disputa atenção com o 'hype da estação': "
+                f"seus leitores entram num estado quase devocional. Mais de {pct_pos:.1f}% das avaliações beiram o arrebatamento, "
+                f"tratando a obra como patrimônio de vida e não apenas leitura descartável."
+            )
+            neurose = (
+                f"Quem dá 1 ou 2 estrelas aqui ({pct_neg:.1f}% da base) não odeia a literatura; odeia a sensação de ter sido enganado pela expectativa. "
+                f"A maior queixa é a **densidade implacável e o ritmo contemplativo**: leitores modernos atraídos por promessas de 'ação frenética' "
+                f"batem de frente com capítulos inteiros de descrições minuciosas, sentindo-se soterrados pelo peso da prosa."
+            )
+            diretrizes = (
+                "- **Edições de Luxo com Margem Alta:** Pare de competir por preço em edições econômicas. O leitor desse autor quer capa dura, "
+                "ilustrações de colecionador e acabamento premium. Cobrar caro aqui é prestar um serviço ao fã.\n"
+                "- **Alinhamento Anti-Decepção no Marketing:** Ajustar o posicionamento de capa para celebrar a riqueza do ritmo e a complexidade, "
+                "filtrando previamente o leitor de consumo rápido que inevitavelmente puniria a obra com nota 1.\n"
+                "- **Expansão de Universo & Obras Paralelas:** Investir em ensaios críticos, edições comentadas e guias de leitura para capturar o apetite da base mais engajada."
+            )
+        elif score_medio >= 4.0:
+            veredito = (
+                f"Um **operário de luxo da ficção e fiador de fluxo de caixa**. Com média **⭐ {score_medio:.2f}** e {pct_pos:.1f}% de aprovação sólida, "
+                f"{nome_autor} entrega exatamente o que o leitor médio busca: ganchos funcionais, entretenimento sem firulas acadêmicas e um pacto narrativo seguro. "
+                f"É o tipo de catálogo que mantém a gráfica rodando e o distribuidor satisfeito."
+            )
+            neurose = (
+                f"O atrito nos {pct_neg:.1f}% de resenhas críticas nasce da **fadiga de fórmula e barrigas no terço central**. "
+                f"Leitores mais atentos reclamam que o livro demora a engatar, acumulando subtramas acessórias que poderiam ter sido podadas com uma tesoura editorial mais corajosa. "
+                f"Quando a resolução do clímax parece apressada demais em relação ao preparo, o leitor se sente enganado."
+            )
+            diretrizes = (
+                "- **Tesoura Amiga no Copidesque:** Novos manuscritos precisam de uma intervenção mais incisiva na estrutura do segundo ato para "
+                "eliminar passagens inertes antes de ir para a gráfica.\n"
+                "- **Preço de Combate e Giro Rápido:** Formatar tiragens para pontos de venda não-tradicionais (aeroportos, supermercados, e-readers) com preço competitivo de entrada.\n"
+                "- **Lançamentos Cronometrados:** Manter cadência regular de novos títulos para não esfriar o leitor de hábito, sem intervalos longos demais entre volumes."
+            )
+        else:
+            veredito = (
+                f"**Alerta vermelho na sala de reuniões**. Uma média de **⭐ {score_medio:.2f}** com expressivos **{pct_neg:.1f}% de notas de repúdio** "
+                f"aponta que estamos operando sob déficit de confiança. {nome_autor} tem volume de vendas, mas deixa um rastro de leitores decepcionados "
+                f"que dificilmente comprarão o próximo livro no lançamento sem desconfiança prévia."
+            )
+            neurose = (
+                "A bronca generalizada dos leitores é a **dissonância cognitiva entre o marketing e a entrega real**. "
+                "As resenhas expõem personagens inverossímeis, diálogos artificiais e a incômoda sensação de que o livro é uma ideia curta esticada para centenas de páginas. "
+                "Reclamações sobre acabamento gráfico frágil e erros crassos de revisão também inflam o rancor do consumidor."
+            )
+            diretrizes = (
+                "- **Auditoria de Originais:** Suspender adiantamentos automáticos até que o conselho veja uma reformulação completa da proposta artística e estrutural.\n"
+                "- **Revisão Radical de Posicionamento:** Mudar completamente o tom de divulgação. Vender como entretenimento despretensioso ou nicho específico, nunca como 'obra-prima indispensável'.\n"
+                "- **Tiragem Enxuta / Print-on-Demand:** Evitar empilhar estoque em livrarias para não amargar devoluções massivas no fechamento do trimestre."
+            )
+
+        return f"""### 📋 Relatório Executivo Editorial: Raio-X Estratégico de {nome_autor}
+
+**1. ⚡ O Veredito Nu e Cru:**
+{veredito}
+
+**2. ⚠️ A Neurose do Leitor: Onde a Obra Engasga:**
+{neurose}
+
+**3. 🎯 Diretrizes para a Mesa Editorial (Segunda-Feira, 9h):**
+{diretrizes}"""
 
     def gerar_analise_financeira_genero(
         self,
